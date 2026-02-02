@@ -5,8 +5,20 @@ use Crealoz\HyvaTranslations\Block\HyvaTranslations as TranslationsBlock;
  * @var TranslationsBlock $block
  */
 
+$translations = $block->getHyvaDefaultTranslationsJson();
+
+// Validate JSON before output to prevent JavaScript syntax errors
+if ($translations) {
+    try {
+        json_decode($translations, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException $e) {
+        $translations = '{}';
+    }
+} else {
+    $translations = '{}';
+}
 ?>
 
 <script type="text/javascript">
-    window.HYVA_DEFAULT_TRANSLATIONS = <?= $block->getHyvaDefaultTranslationsJson() ?: '{}' ?>;
+    window.HYVA_DEFAULT_TRANSLATIONS = <?= /** @noEscape */ $translations ?>;
 </script>

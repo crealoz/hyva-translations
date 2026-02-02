@@ -1,0 +1,13 @@
+{
+    "Hello": "Bonjour",
+    "Goodbye": "Au revoir",
+    "Add to Cart": "Ajouter au panier",
+    "Remove": "Supprimer",
+    "Welcome %1": "Bienvenue %1",
+    "Hello %1, you have %2 messages": "Bonjour %1, vous avez %2 messages",
+    "Welcome {name}": "Bienvenue {name}",
+    "Hello {name}, you have {count} items": "Bonjour {name}, vous avez {count} articles",
+    "Qty": "Qté",
+    "View Details": "Voir les détails",
+    "Continue Shopping": "Continuer vos achats"
+}

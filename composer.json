@@ -1,20 +1,25 @@
 {
-  "name": "crealoz/hyva-translations",
-  "version": "1.0.0",
-  "description": "N/A",
-  "type": "magento2-module",
-  "require": {
-    "magento/framework": "*"
-  },
-  "license": [
-    "MIT"
-  ],
-  "autoload": {
-    "files": [
-      "registration.php"
+    "name": "crealoz/hyva-translations",
+    "version": "1.1.0",
+    "description": "Extends the JS translation pipeline for Hyva themes: collects translations from .js and .phtml files and exposes a ready-to-use JS dictionary for the $t function",
+    "type": "magento2-module",
+    "require": {
+        "php": "^8.1",
+        "magento/framework": "^103.0 || ^104.0",
+        "psr/log": "^1.0 || ^2.0 || ^3.0"
+    },
+    "suggest": {
+        "hyva-themes/magento2-theme-module": "Required for Hyva theme integration"
+    },
+    "license": [
+        "MIT"
     ],
-    "psr-4": {
-      "Crealoz\\HyvaTranslations\\": ""
+    "autoload": {
+        "files": [
+            "registration.php"
+        ],
+        "psr-4": {
+            "Crealoz\\HyvaTranslations\\": ""
+        }
     }
-  }
 }
