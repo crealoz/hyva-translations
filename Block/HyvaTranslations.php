@@ -11,15 +11,16 @@ use Crealoz\HyvaTranslations\Model\Js\DataProvider;
 
 class HyvaTranslations extends Template
 {
-    private const CACHE_TAG = 'HYVA_TRANSLATIONS_CACHE';
+    private const CACHE_TAG = 'HYVA_TRANSLATIONS';
+    private const CACHE_LIFETIME = 86400; // 24 hours
 
     public function __construct(
-        Template\Context                        $context,
-        private readonly DataProvider           $jsDataProvider,
-        private readonly Json                   $jsonSerializer,
-        private readonly CacheInterface         $cache,
-        private readonly DesignInterface        $design,
-        array                                   $data = []
+        Template\Context $context,
+        private readonly DataProvider $jsDataProvider,
+        private readonly Json $jsonSerializer,
+        private readonly CacheInterface $cache,
+        private readonly DesignInterface $design,
+        array $data = []
     ) {
         parent::__construct($context, $data);
     }
@@ -32,8 +33,9 @@ class HyvaTranslations extends Template
     public function getHyvaDefaultTranslationsJson(): string
     {
         $currentTheme = $this->design->getDesignTheme();
+        $themeId = $currentTheme->getId();
 
-        $designCacheKey = self::CACHE_TAG . '_' . $currentTheme->getId();
+        $designCacheKey = self::CACHE_TAG . '_' . $themeId;
 
         $cachedTranslations = $this->cache->load($designCacheKey);
         if ($cachedTranslations !== false) {
@@ -53,7 +55,22 @@ class HyvaTranslations extends Template
         }
 
         $translationsJson = $this->jsonSerializer->serialize($dictionary);
-        $this->cache->save($translationsJson, $designCacheKey, [$designCacheKey], 86400); // Cache for 1 day
+
+        // Save with multiple cache tags for better invalidation control
+        // - HYVA_TRANSLATIONS: invalidates all translation caches
+        // - HYVA_TRANSLATIONS_{id}: invalidates specific theme cache
+        // - THEME_{id}: invalidates when theme changes
+        $this->cache->save(
+            $translationsJson,
+            $designCacheKey,
+            [
+                self::CACHE_TAG,
+                self::CACHE_TAG . '_' . $themeId,
+                'THEME_' . $themeId
+            ],
+            self::CACHE_LIFETIME
+        );
+
         return $translationsJson;
     }
 }

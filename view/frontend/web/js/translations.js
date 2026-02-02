@@ -1,6 +1,17 @@
 (function (global) {
     'use strict';
 
+    // Debug mode: set window.__HyvaTranslationsDebug = true to enable console logging
+    function debug(message, data) {
+        if (global.__HyvaTranslationsDebug) {
+            if (data !== undefined) {
+                console.warn('[HyvaTranslations]', message, data);
+            } else {
+                console.warn('[HyvaTranslations]', message);
+            }
+        }
+    }
+
     // Internal dictionary (initialized lazily)
     let DICT = (global.HYVA_DEFAULT_TRANSLATIONS && typeof global.HYVA_DEFAULT_TRANSLATIONS === 'object')
         ? global.HYVA_DEFAULT_TRANSLATIONS
@@ -14,6 +25,7 @@
                 DICT = {};
             }
         } catch (e) {
+            debug('Error checking DICT:', e);
             DICT = {};
         }
         if ((!DICT || Object.keys(DICT).length === 0) && global.HYVA_DEFAULT_TRANSLATIONS && typeof global.HYVA_DEFAULT_TRANSLATIONS === 'object') {
@@ -60,23 +72,93 @@
         return replaceNumberedPlaceholders(translated, params);
     }
 
+    /**
+     * Validate that an object contains only string keys and string values.
+     * @param {Object} obj - The object to validate
+     * @returns {Object} - A sanitized object with only valid string key/value pairs
+     */
+    function validateTranslationObject(obj) {
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+            debug('Invalid translation object (not an object or is array)');
+            return {};
+        }
+
+        const sanitized = {};
+        for (const key in obj) {
+            if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+                continue;
+            }
+            // Skip prototype pollution attempts
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+                debug('Blocked potential prototype pollution key:', key);
+                continue;
+            }
+            if (typeof key !== 'string') {
+                debug('Invalid translation key (not a string):', key);
+                continue;
+            }
+            if (typeof obj[key] !== 'string') {
+                debug('Invalid translation value for key (not a string):', { key: key, value: obj[key] });
+                continue;
+            }
+            sanitized[key] = obj[key];
+        }
+        return sanitized;
+    }
+
     // Allow external code to set/merge translations programmatically
-    function setTranslations(obj, merge = true) {
-        if (!obj || typeof obj !== 'object') return;
+    function setTranslations(obj, merge) {
+        if (merge === undefined) merge = true;
+
+        const validated = validateTranslationObject(obj);
+        if (Object.keys(validated).length === 0) {
+            debug('No valid translations to set');
+            return;
+        }
+
         if (merge) {
-            DICT = Object.assign({}, DICT, obj);
+            DICT = Object.assign({}, DICT, validated);
         } else {
-            DICT = Object.assign({}, obj);
+            DICT = Object.assign({}, validated);
         }
         global.HYVA_DEFAULT_TRANSLATIONS = DICT;
         DICT_READY = Object.keys(DICT).length > 0;
-        const ev = new CustomEvent('hyva:translations:updated', { detail: { translations: DICT }});
-        try { global.dispatchEvent(ev); } catch(e) { /* ignore */ }
+
+        try {
+            const ev = new CustomEvent('hyva:translations:updated', { detail: { translations: DICT }});
+            global.dispatchEvent(ev);
+        } catch (e) {
+            debug('Failed to dispatch translations:updated event:', e);
+        }
     }
 
     function getTranslations() {
         ensureDict();
         return DICT;
+    }
+
+    /**
+     * Parse JSON params safely with validation.
+     * @param {string} rawParams - The raw params string from data-i18n-params
+     * @returns {Object|Array|null} - Parsed params or null if invalid
+     */
+    function parseJsonParams(rawParams) {
+        if (!rawParams || typeof rawParams !== 'string') {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(rawParams);
+            // Validate that parsed result is an object (for named params) or array (for numbered params)
+            if (parsed && typeof parsed === 'object') {
+                return parsed;
+            }
+            debug('Parsed JSON is not an object or array:', parsed);
+            return null;
+        } catch (e) {
+            debug('Failed to parse JSON params:', { rawParams: rawParams, error: e.message });
+            return null;
+        }
     }
 
     // expose globals
@@ -86,7 +168,8 @@
         set: setTranslations,
         get: getTranslations,
         // convenience: force pickup from global var immediately (merge=false by default)
-        pickup: function (merge = false) {
+        pickup: function (merge) {
+            if (merge === undefined) merge = false;
             if (global.HYVA_DEFAULT_TRANSLATIONS && typeof global.HYVA_DEFAULT_TRANSLATIONS === 'object') {
                 setTranslations(global.HYVA_DEFAULT_TRANSLATIONS, merge);
             }
@@ -98,18 +181,23 @@
                 const sel = selector || '[data-i18n-key]';
                 if (typeof document === 'undefined') return;
                 const nodes = document.querySelectorAll(sel);
-                nodes.forEach(node => {
+                nodes.forEach(function (node) {
                     const key = node.getAttribute('data-i18n-key');
                     if (!key) return;
                     const rawParams = node.getAttribute('data-i18n-params');
                     let result;
                     if (rawParams) {
-                        try {
-                            const parsed = JSON.parse(rawParams);
-                            result = translate(key, parsed);
-                        } catch (e) {
-                            const parts = rawParams.split(',').map(p => p.trim());
-                            result = translate.apply(null, [key].concat(parts));
+                        const parsed = parseJsonParams(rawParams);
+                        if (parsed !== null) {
+                            // Valid JSON - use as params
+                            if (Array.isArray(parsed)) {
+                                result = translate.apply(null, [key].concat(parsed));
+                            } else {
+                                result = translate(key, parsed);
+                            }
+                        } else {
+                            // Invalid JSON - treat as single string parameter
+                            result = translate(key, rawParams);
                         }
                     } else {
                         result = translate(key);
@@ -120,7 +208,9 @@
                         node.textContent = result;
                     }
                 });
-            } catch (e) { /* ignore */ }
+            } catch (e) {
+                debug('Error in refresh:', e);
+            }
         }
     };
 
@@ -134,7 +224,9 @@
                     };
                 });
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+            debug('Failed to register Alpine magic:', e);
+        }
     }
 
     if (global.Alpine) {
@@ -142,14 +234,17 @@
     } else {
         const MAX_ATTEMPTS = 20;
         let attempts = 0;
-        const poll = setInterval(() => {
+        const poll = setInterval(function () {
             attempts++;
             if (global.Alpine) {
                 clearInterval(poll);
                 registerAlpineMagic(global.Alpine);
                 return;
             }
-            if (attempts >= MAX_ATTEMPTS) clearInterval(poll);
+            if (attempts >= MAX_ATTEMPTS) {
+                clearInterval(poll);
+                debug('Alpine not found after ' + MAX_ATTEMPTS + ' attempts');
+            }
         }, 50);
     }
 
@@ -157,7 +252,7 @@
     if (!global.HYVA_DEFAULT_TRANSLATIONS || Object.keys(global.HYVA_DEFAULT_TRANSLATIONS).length === 0) {
         const MAX_PICKUP = 40;
         let pickupAttempts = 0;
-        const pickup = setInterval(() => {
+        const pickup = setInterval(function () {
             pickupAttempts++;
             if (global.HYVA_DEFAULT_TRANSLATIONS && typeof global.HYVA_DEFAULT_TRANSLATIONS === 'object'
                 && Object.keys(global.HYVA_DEFAULT_TRANSLATIONS).length > 0) {
@@ -165,15 +260,32 @@
                 clearInterval(pickup);
                 return;
             }
-            if (pickupAttempts >= MAX_PICKUP) clearInterval(pickup);
+            if (pickupAttempts >= MAX_PICKUP) {
+                clearInterval(pickup);
+                debug('Translations not found after ' + MAX_PICKUP + ' pickup attempts');
+            }
         }, 25);
     }
 
     // explicit injection event
     function onInjectEvent(e) {
-        if (!e || !e.detail || !e.detail.translations) return;
-        setTranslations(e.detail.translations, true);
+        if (!e || !e.detail) {
+            debug('Invalid injection event (missing detail)');
+            return;
+        }
+        // Support both e.detail.translations and e.detail directly as translation object
+        const translations = e.detail.translations || e.detail;
+        if (!translations || typeof translations !== 'object') {
+            debug('Invalid injection event (no translations in detail)');
+            return;
+        }
+        setTranslations(translations, true);
     }
-    try { global.addEventListener('hyva:translations:inject', onInjectEvent); } catch (e) { /* ignore */ }
+
+    try {
+        global.addEventListener('hyva:translations:inject', onInjectEvent);
+    } catch (e) {
+        debug('Failed to register injection listener:', e);
+    }
 
 })(window);
